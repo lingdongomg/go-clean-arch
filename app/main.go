@@ -5,19 +5,17 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"os"
-	"strconv"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/labstack/echo/v4"
+	"github.com/spf13/viper"
 
 	mysqlRepo "github.com/bxcodec/go-clean-arch/internal/repository/mysql"
 
 	"github.com/bxcodec/go-clean-arch/article"
-	"github.com/bxcodec/go-clean-arch/internal/rest"
-	"github.com/bxcodec/go-clean-arch/internal/rest/middleware"
-	"github.com/joho/godotenv"
+	"github.com/bxcodec/go-clean-arch/internal/handler"
+	"github.com/bxcodec/go-clean-arch/internal/handler/middleware"
 )
 
 const (
@@ -26,19 +24,26 @@ const (
 )
 
 func init() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
+	// 设置配置文件名和路径
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("../configs")
+	viper.AddConfigPath("./configs")
+	viper.AddConfigPath(".")
+
+	// 读取配置文件
+	if err := viper.ReadInConfig(); err != nil {
+		log.Fatal("Error reading config file:", err)
 	}
 }
 
 func main() {
 	//prepare database
-	dbHost := os.Getenv("DATABASE_HOST")
-	dbPort := os.Getenv("DATABASE_PORT")
-	dbUser := os.Getenv("DATABASE_USER")
-	dbPass := os.Getenv("DATABASE_PASS")
-	dbName := os.Getenv("DATABASE_NAME")
+	dbHost := viper.GetString("database.host")
+	dbPort := viper.GetString("database.port")
+	dbUser := viper.GetString("database.user")
+	dbPass := viper.GetString("database.password")
+	dbName := viper.GetString("database.name")
 	connection := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", dbUser, dbPass, dbHost, dbPort, dbName)
 	val := url.Values{}
 	val.Add("parseTime", "1")
@@ -63,10 +68,9 @@ func main() {
 
 	e := echo.New()
 	e.Use(middleware.CORS)
-	timeoutStr := os.Getenv("CONTEXT_TIMEOUT")
-	timeout, err := strconv.Atoi(timeoutStr)
-	if err != nil {
-		log.Println("failed to parse timeout, using default timeout")
+	timeout := viper.GetInt("context.timeout")
+	if timeout == 0 {
+		log.Println("timeout not configured, using default timeout")
 		timeout = defaultTimeout
 	}
 	timeoutContext := time.Duration(timeout) * time.Second
@@ -78,10 +82,10 @@ func main() {
 
 	// Build service Layer
 	svc := article.NewService(articleRepo, authorRepo)
-	rest.NewArticleHandler(e, svc)
+	handler.NewArticleHandler(e, svc)
 
 	// Start Server
-	address := os.Getenv("SERVER_ADDRESS")
+	address := viper.GetString("server.address")
 	if address == "" {
 		address = defaultAddress
 	}

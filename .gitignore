@@ -8,4 +8,4 @@ engine
 bin/
 *.out
 tmp_app/
-.env
+configs/config.yaml

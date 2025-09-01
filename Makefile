@@ -1,9 +1,3 @@
-# Database
-MYSQL_USER ?= user
-MYSQL_PASSWORD ?= password
-MYSQL_ADDRESS ?= 127.0.0.1:3306
-MYSQL_DATABASE ?= article
-
 # Exporting bin folder to the path for makefile
 export PATH   := $(PWD)/bin:$(PATH)
 # Default Shell
@@ -15,12 +9,12 @@ export ARCH := $(shell uname -m)
 
 
 # --- Tooling & Variables ----------------------------------------------------------------
-include ./misc/make/tools.Makefile
-include ./misc/make/help.Makefile
+include ./scripts/make/tools.Makefile
+include ./scripts/make/help.Makefile
 
 # ~~~ Development Environment ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-up: dev-env dev-air             ## Startup / Spinup Docker Compose and air
+up: dev-air                    ## Startup air for development
 down: docker-stop               ## Stop Docker
 destroy: docker-teardown clean  ## Teardown (removes volumes, tmp files, etc...)
 
@@ -30,11 +24,11 @@ deps:
 	@echo "Required Tools Are Available"
 
 dev-env: ## Bootstrap Environment (with a Docker-Compose help).
-	@ docker-compose up -d --build mysql
+	@echo "Development environment ready (MySQL removed)"
 
-dev-env-test: dev-env ## Run application (within a Docker-Compose help)
+dev-test: ## Run application for testing
 	@ $(MAKE) image-build
-	docker-compose up web
+	@echo "Test environment ready (MySQL removed)"
 
 dev-air: $(AIR) ## Starts AIR ( Continuous Development app).
 	air
