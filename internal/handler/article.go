@@ -5,11 +5,12 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/sirupsen/logrus"
-	validator "gopkg.in/go-playground/validator.v9"
 
 	"github.com/bxcodec/go-clean-arch/domain"
+	"github.com/bxcodec/go-clean-arch/internal/handler/middleware"
 )
 
 // ResponseError represent the response error struct
@@ -31,64 +32,73 @@ type ArticleService interface {
 
 // ArticleHandler  represent the httphandler for article
 type ArticleHandler struct {
-	Service ArticleService
+	Service   ArticleService
+	validator *validator.Validate
 }
 
 const defaultNum = 10
 
 // NewArticleHandler will initialize the articles/ resources endpoint
-func NewArticleHandler(e *echo.Echo, svc ArticleService) {
+func NewArticleHandler(r *gin.Engine, svc ArticleService) {
 	handler := &ArticleHandler{
-		Service: svc,
+		Service:   svc,
+		validator: validator.New(),
 	}
-	e.GET("/articles", handler.FetchArticle)
-	e.POST("/articles", handler.Store)
-	e.GET("/articles/:id", handler.GetByID)
-	e.DELETE("/articles/:id", handler.Delete)
+
+	// 注册路由
+	v1 := r.Group("/api/v1")
+	{
+		v1.GET("/articles", handler.FetchArticle)
+		v1.POST("/articles", handler.Store)
+		v1.GET("/articles/:id", handler.GetByID)
+		v1.DELETE("/articles/:id", handler.Delete)
+	}
 }
 
 // FetchArticle will fetch the article based on given params
-func (a *ArticleHandler) FetchArticle(c echo.Context) error {
-
-	numS := c.QueryParam("num")
+func (a *ArticleHandler) FetchArticle(c *gin.Context) {
+	numS := c.DefaultQuery("num", "10")
 	num, err := strconv.Atoi(numS)
 	if err != nil || num == 0 {
 		num = defaultNum
 	}
 
-	cursor := c.QueryParam("cursor")
-	ctx := c.Request().Context()
+	cursor := c.Query("cursor")
+	ctx := c.Request.Context()
 
 	listAr, nextCursor, err := a.Service.Fetch(ctx, cursor, int64(num))
 	if err != nil {
-		return c.JSON(getStatusCode(err), ResponseError{Message: err.Error()})
+		middleware.HandleError(c, middleware.NewAppErrorWithErr(getStatusCode(err), "获取文章列表失败", err))
+		return
 	}
 
-	c.Response().Header().Set(`X-Cursor`, nextCursor)
-	return c.JSON(http.StatusOK, listAr)
+	c.Header("X-Cursor", nextCursor)
+	c.JSON(http.StatusOK, listAr)
 }
 
 // GetByID will get article by given id
-func (a *ArticleHandler) GetByID(c echo.Context) error {
-	idP, err := strconv.Atoi(c.Param("id"))
+func (a *ArticleHandler) GetByID(c *gin.Context) {
+	idParam := c.Param("id")
+	idP, err := strconv.Atoi(idParam)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, domain.ErrNotFound.Error())
+		middleware.HandleError(c, middleware.ErrBadRequest)
+		return
 	}
 
 	id := int64(idP)
-	ctx := c.Request().Context()
+	ctx := c.Request.Context()
 
 	art, err := a.Service.GetByID(ctx, id)
 	if err != nil {
-		return c.JSON(getStatusCode(err), ResponseError{Message: err.Error()})
+		middleware.HandleError(c, middleware.NewAppErrorWithErr(getStatusCode(err), "获取文章失败", err))
+		return
 	}
 
-	return c.JSON(http.StatusOK, art)
+	c.JSON(http.StatusOK, art)
 }
 
-func isRequestValid(m *domain.Article) (bool, error) {
-	validate := validator.New()
-	err := validate.Struct(m)
+func (a *ArticleHandler) isRequestValid(m *domain.Article) (bool, error) {
+	err := a.validator.Struct(m)
 	if err != nil {
 		return false, err
 	}
@@ -96,43 +106,49 @@ func isRequestValid(m *domain.Article) (bool, error) {
 }
 
 // Store will store the article by given request body
-func (a *ArticleHandler) Store(c echo.Context) (err error) {
+func (a *ArticleHandler) Store(c *gin.Context) {
 	var article domain.Article
-	err = c.Bind(&article)
-	if err != nil {
-		return c.JSON(http.StatusUnprocessableEntity, err.Error())
+	if err := c.ShouldBindJSON(&article); err != nil {
+		middleware.HandleError(c, middleware.NewAppErrorWithErr(http.StatusBadRequest, "请求参数错误", err))
+		return
 	}
 
 	var ok bool
-	if ok, err = isRequestValid(&article); !ok {
-		return c.JSON(http.StatusBadRequest, err.Error())
+	var err error
+	if ok, err = a.isRequestValid(&article); !ok {
+		middleware.HandleError(c, middleware.NewAppErrorWithErr(http.StatusBadRequest, "参数验证失败", err))
+		return
 	}
 
-	ctx := c.Request().Context()
+	ctx := c.Request.Context()
 	err = a.Service.Store(ctx, &article)
 	if err != nil {
-		return c.JSON(getStatusCode(err), ResponseError{Message: err.Error()})
+		middleware.HandleError(c, middleware.NewAppErrorWithErr(getStatusCode(err), "创建文章失败", err))
+		return
 	}
 
-	return c.JSON(http.StatusCreated, article)
+	c.JSON(http.StatusCreated, article)
 }
 
 // Delete will delete article by given param
-func (a *ArticleHandler) Delete(c echo.Context) error {
-	idP, err := strconv.Atoi(c.Param("id"))
+func (a *ArticleHandler) Delete(c *gin.Context) {
+	idParam := c.Param("id")
+	idP, err := strconv.Atoi(idParam)
 	if err != nil {
-		return c.JSON(http.StatusNotFound, domain.ErrNotFound.Error())
+		middleware.HandleError(c, middleware.ErrBadRequest)
+		return
 	}
 
 	id := int64(idP)
-	ctx := c.Request().Context()
+	ctx := c.Request.Context()
 
 	err = a.Service.Delete(ctx, id)
 	if err != nil {
-		return c.JSON(getStatusCode(err), ResponseError{Message: err.Error()})
+		middleware.HandleError(c, middleware.NewAppErrorWithErr(getStatusCode(err), "删除文章失败", err))
+		return
 	}
 
-	return c.NoContent(http.StatusNoContent)
+	c.Status(http.StatusNoContent)
 }
 
 func getStatusCode(err error) int {

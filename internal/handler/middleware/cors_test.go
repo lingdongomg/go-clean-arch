@@ -2,10 +2,10 @@ package middleware_test
 
 import (
 	"net/http"
-	test "net/http/httptest"
+	"net/http/httptest"
 	"testing"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -13,16 +13,41 @@ import (
 )
 
 func TestCORS(t *testing.T) {
-	e := echo.New()
-	req := test.NewRequest(echo.GET, "/", nil)
-	res := test.NewRecorder()
-	c := e.NewContext(req, res)
+	gin.SetMode(gin.TestMode)
 
-	h := middleware.CORS(echo.HandlerFunc(func(c echo.Context) error {
-		return c.NoContent(http.StatusOK)
-	}))
+	r := gin.New()
+	r.Use(middleware.CORS())
 
-	err := h(c)
-	require.NoError(t, err)
-	assert.Equal(t, "*", res.Header().Get("Access-Control-Allow-Origin"))
+	r.GET("/test", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "GET, POST, PUT, DELETE, OPTIONS", w.Header().Get("Access-Control-Allow-Methods"))
+	assert.Equal(t, "Content-Type, Authorization", w.Header().Get("Access-Control-Allow-Headers"))
+}
+
+func TestCORSOptions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(middleware.CORS())
+
+	r.GET("/test", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/test", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNoContent, w.Code)
+	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
 }

@@ -7,8 +7,9 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/labstack/echo/v4"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
 	mysqlRepo "github.com/bxcodec/go-clean-arch/internal/repository/mysql"
@@ -38,7 +39,12 @@ func init() {
 }
 
 func main() {
-	//prepare database
+	// 设置Gin模式
+	if !viper.GetBool("debug") {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	// 准备数据库连接
 	dbHost := viper.GetString("database.host")
 	dbPort := viper.GetString("database.port")
 	dbUser := viper.GetString("database.user")
@@ -64,30 +70,51 @@ func main() {
 			log.Fatal("got error when closing the DB connection", err)
 		}
 	}()
-	// prepare echo
 
-	e := echo.New()
-	e.Use(middleware.CORS)
+	// 准备Gin引擎
+	r := gin.New()
+
+	// 创建日志实例
+	logger := logrus.New()
+	logger.SetFormatter(&logrus.JSONFormatter{})
+
+	// 注册中间件
+	r.Use(gin.Logger())
+	r.Use(middleware.ErrorHandler(logger))
+	r.Use(middleware.ErrorMiddleware(logger))
+	r.Use(middleware.CORS())
+
+	// 设置超时中间件
 	timeout := viper.GetInt("context.timeout")
 	if timeout == 0 {
 		log.Println("timeout not configured, using default timeout")
 		timeout = defaultTimeout
 	}
 	timeoutContext := time.Duration(timeout) * time.Second
-	e.Use(middleware.SetRequestContextWithTimeout(timeoutContext))
+	r.Use(middleware.SetRequestContextWithTimeout(timeoutContext))
 
-	// Prepare Repository
+	// 准备Repository
 	authorRepo := mysqlRepo.NewAuthorRepository(dbConn)
 	articleRepo := mysqlRepo.NewArticleRepository(dbConn)
 
-	// Build service Layer
+	// 构建Service层
 	svc := article.NewService(articleRepo, authorRepo)
-	handler.NewArticleHandler(e, svc)
+	handler.NewArticleHandler(r, svc)
 
-	// Start Server
+	// 健康检查端点
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status": "ok",
+			"time":   time.Now().Format(time.RFC3339),
+		})
+	})
+
+	// 启动服务器
 	address := viper.GetString("server.address")
 	if address == "" {
 		address = defaultAddress
 	}
-	log.Fatal(e.Start(address)) //nolint
+
+	log.Printf("Server starting on %s", address)
+	log.Fatal(r.Run(address))
 }

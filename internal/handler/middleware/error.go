@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
 )
 
@@ -49,7 +49,7 @@ func NewAppError(code int, message string, details string) *AppError {
 	}
 }
 
-// NewAppErrorWithErr 创建带原始错误的应用错误
+// NewAppErrorWithErr 创建包含原始错误的应用错误
 func NewAppErrorWithErr(code int, message string, err error) *AppError {
 	return &AppError{
 		Code:    code,
@@ -58,70 +58,85 @@ func NewAppErrorWithErr(code int, message string, err error) *AppError {
 	}
 }
 
-// ErrorHandler 统一错误处理中间件
-func ErrorHandler(logger *logrus.Logger) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			err := next(c)
-			if err != nil {
-				return handleError(c, err, logger)
-			}
-			return nil
+// ErrorHandler 统一错误处理中间件（用于panic恢复）
+func ErrorHandler(logger *logrus.Logger) gin.HandlerFunc {
+	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		if err, ok := recovered.(error); ok {
+			handleError(c, err, logger)
+		} else {
+			handleError(c, ErrInternalServerError, logger)
+		}
+	})
+}
+
+// ErrorMiddleware 错误处理中间件（用于手动错误处理）
+func ErrorMiddleware(logger *logrus.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+
+		// 检查是否有错误
+		if len(c.Errors) > 0 {
+			err := c.Errors.Last().Err
+			handleError(c, err, logger)
+			c.Abort()
 		}
 	}
 }
 
-// handleError 处理错误
-func handleError(c echo.Context, err error, logger *logrus.Logger) error {
-	var appErr *AppError
-	var httpErr *echo.HTTPError
+// HandleError 手动处理错误的辅助函数
+func HandleError(c *gin.Context, err error) {
+	c.Error(err)
+}
 
-	// 判断错误类型
-	switch {
-	case errors.As(err, &appErr):
-		// 应用自定义错误
-		logError(logger, c, appErr, appErr.Code >= 500)
-		return c.JSON(appErr.Code, ErrorResponse{
+func handleError(c *gin.Context, err error, logger *logrus.Logger) {
+	// 记录错误日志
+	logFields := logrus.Fields{
+		"method":     c.Request.Method,
+		"uri":        c.Request.RequestURI,
+		"user_agent": c.Request.UserAgent(),
+		"ip":         c.ClientIP(),
+		"error":      err.Error(),
+	}
+
+	// 检查是否是自定义应用错误
+	var appErr *AppError
+	if errors.As(err, &appErr) {
+		if appErr.Code >= 500 {
+			// 服务器错误，使用 ERROR 级别
+			logger.WithFields(logFields).Error("Server error")
+		} else {
+			// 客户端错误，使用 WARN 级别
+			logger.WithFields(logFields).Warn("Client error")
+		}
+		c.JSON(appErr.Code, ErrorResponse{
 			Code:    appErr.Code,
 			Message: appErr.Message,
 			Details: appErr.Details,
 		})
+		return
+	}
 
-	case errors.As(err, &httpErr):
-		// Echo HTTP 错误
-		code := httpErr.Code
-		message := getHTTPErrorMessage(code)
+	// 检查是否是 Gin 绑定错误
+	if bindErr, ok := err.(*gin.Error); ok {
+		code := http.StatusBadRequest
+		message := "请求参数错误"
 
-		logError(logger, c, err, code >= 500)
-		return c.JSON(code, ErrorResponse{
+		logger.WithFields(logFields).Warn("Binding error")
+
+		c.JSON(code, ErrorResponse{
 			Code:    code,
 			Message: message,
+			Details: bindErr.Error(),
 		})
-
-	default:
-		// 未知错误，统一返回 500
-		logError(logger, c, err, true)
-		return c.JSON(http.StatusInternalServerError, ErrorResponse{
-			Code:    http.StatusInternalServerError,
-			Message: "服务器内部错误",
-		})
-	}
-}
-
-// logError 记录错误日志
-func logError(logger *logrus.Logger, c echo.Context, err error, isServerError bool) {
-	fields := logrus.Fields{
-		"method":     c.Request().Method,
-		"uri":        c.Request().RequestURI,
-		"user_agent": c.Request().UserAgent(),
-		"remote_ip":  c.RealIP(),
+		return
 	}
 
-	if isServerError {
-		logger.WithFields(fields).WithError(err).Error("Server error occurred")
-	} else {
-		logger.WithFields(fields).WithError(err).Warn("Client error occurred")
-	}
+	// 未知错误，返回 500
+	logger.WithFields(logFields).Error("Unknown error")
+	c.JSON(http.StatusInternalServerError, ErrorResponse{
+		Code:    http.StatusInternalServerError,
+		Message: "服务器内部错误",
+	})
 }
 
 // getHTTPErrorMessage 获取 HTTP 错误消息
