@@ -2,12 +2,12 @@ package article
 
 import (
 	"context"
+
 	"time"
 
-	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/bxcodec/go-clean-arch/domain"
+	log "github.com/lingdongomg/g-lib/logger"
+	"golang.org/x/sync/errgroup"
 )
 
 // ArticleRepository represent the article's repository contract
@@ -73,7 +73,7 @@ func (a *Service) fillAuthorDetails(ctx context.Context, data []domain.Article) 
 		defer close(chanAuthor)
 		err := g.Wait()
 		if err != nil {
-			logrus.Error(err)
+			log.Error("Error waiting for author goroutines", err)
 			return
 		}
 

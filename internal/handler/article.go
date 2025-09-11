@@ -2,15 +2,16 @@ package handler
 
 import (
 	"context"
+
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
-	"github.com/sirupsen/logrus"
 
 	"github.com/bxcodec/go-clean-arch/domain"
 	"github.com/bxcodec/go-clean-arch/internal/handler/middleware"
+	log "github.com/lingdongomg/g-lib/logger"
 )
 
 // ResponseError represent the response error struct
@@ -156,7 +157,7 @@ func getStatusCode(err error) int {
 		return http.StatusOK
 	}
 
-	logrus.Error(err)
+	log.Error("Error occurred while processing request", err)
 	switch err {
 	case domain.ErrInternalServerError:
 		return http.StatusInternalServerError

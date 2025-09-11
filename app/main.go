@@ -3,13 +3,11 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"net/url"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 
 	mysqlRepo "github.com/bxcodec/go-clean-arch/internal/repository/mysql"
@@ -17,6 +15,7 @@ import (
 	"github.com/bxcodec/go-clean-arch/article"
 	"github.com/bxcodec/go-clean-arch/internal/handler"
 	"github.com/bxcodec/go-clean-arch/internal/handler/middleware"
+	log "github.com/lingdongomg/g-lib/logger"
 )
 
 const (
@@ -34,11 +33,26 @@ func init() {
 
 	// 读取配置文件
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatal("Error reading config file:", err)
+		// 在日志系统初始化之前，使用标准库
+		fmt.Printf("Error reading config file: %v\n", err)
+		panic(err)
 	}
 }
 
 func main() {
+	// 示例1：没有进行任何初始化，直接引用包名进行打印，打印输出到当前default.log文件中
+	log.Info("应用启动中...")
+
+	// 示例2：通过文件进行配置实例化，实例化后可以使用返回值logger打印，也可以直接使用包名进行打印（则可以忽略返回值logger）
+	// 规范建议是统一使用包名log.XXX进行日志输出，另外任何框架都必须包括如下的日志配置文件，配置文件名不能随意更改
+	_, err := log.NewZapLogger("./configs/log.conf.yaml")
+	if err != nil {
+		// 如果配置文件不存在，使用默认配置
+		log.Warn("日志配置文件不存在，使用默认配置:", err)
+	}
+
+	log.Info("日志系统初始化完成")
+
 	// 设置Gin模式
 	if !viper.GetBool("debug") {
 		gin.SetMode(gin.ReleaseMode)
@@ -61,8 +75,10 @@ func main() {
 	}
 	err = dbConn.Ping()
 	if err != nil {
-		log.Fatal("failed to ping database ", err)
+		log.Fatal("failed to ping database", err)
 	}
+
+	log.Info("数据库连接成功")
 
 	defer func() {
 		err := dbConn.Close()
@@ -74,20 +90,16 @@ func main() {
 	// 准备Gin引擎
 	r := gin.New()
 
-	// 创建日志实例
-	logger := logrus.New()
-	logger.SetFormatter(&logrus.JSONFormatter{})
-
 	// 注册中间件
 	r.Use(gin.Logger())
-	r.Use(middleware.ErrorHandler(logger))
-	r.Use(middleware.ErrorMiddleware(logger))
+	r.Use(middleware.ErrorHandler())
+	r.Use(middleware.ErrorMiddleware())
 	r.Use(middleware.CORS())
 
 	// 设置超时中间件
 	timeout := viper.GetInt("context.timeout")
 	if timeout == 0 {
-		log.Println("timeout not configured, using default timeout")
+		log.Warn("timeout not configured, using default timeout")
 		timeout = defaultTimeout
 	}
 	timeoutContext := time.Duration(timeout) * time.Second
@@ -115,6 +127,8 @@ func main() {
 		address = defaultAddress
 	}
 
-	log.Printf("Server starting on %s", address)
-	log.Fatal(r.Run(address))
+	log.Infof("服务器启动在端口 %s", address)
+	if err := r.Run(address); err != nil {
+		log.Error("服务器启动失败:", err)
+	}
 }

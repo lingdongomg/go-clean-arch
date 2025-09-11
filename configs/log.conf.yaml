@@ -1,0 +1,20 @@
+# zerolog logger standard configuration
+zerolog:
+  level: 'info'       # level: debug,info,warn,error,fatal,panic
+  format: 'console'   # console: 控制台形式输出日志 ;json: json格式输出日志
+  prefix: 'go-clean-arch'   # 定义日志文件名，一般用服务名
+  director: 'logs'    # 存放日志的文件夹,修改即可,相对路径为NewLogger调用所在文件夹
+  show-line: true     # 显示打印当前log的行号, 默认为true,不建议修改
+  log-in-console: true          #  是否同时输出到控制台,默认为true
+  log-save-day: 7               #  日志保留天数
+  max-size: 500                 #  日志最大大小，单位MB
+  module-name: 'go-clean-arch'    #  直接用服务名称即可，同prefix
+  compress: true                #  是否压缩
+  max-backups: 10               #  最大保留日志文件个数
+  file-rotate: 'FileSize'           # 支持2种滚动方式，FileSize:文件大小滚动，Day:按天滚动
+  day-log-suffix: '-%Y-%m-%d.log'   # 按天滚动日志的文件后缀格式，%Y%m%d%H%M
+  time-format: '2006-01-02 15:04:05.000'  # 时间格式
+
+# 自定义设置
+custom-settings:
+  # 可以在这里添加自定义配置

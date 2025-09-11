@@ -1,0 +1,21 @@
+debug: true
+server:
+  address: ":9090"
+context:
+  timeout: 2
+database:
+  host: "localhost"
+  port: "3306"
+  user: "user"
+  password: "password"
+  name: "article"
+logger:
+  provider: "zerolog"  # 支持: zerolog, logrus
+  level: "info"        # 支持: debug, info, warn, error, fatal
+  format: "console"    # 支持: json, text, console
+  output: "stdout"     # 支持: stdout, stderr, file
+  file_path: "logs/app.log"  # 当 output 为 file 时使用
+  max_size: 100        # 日志文件最大大小 (MB)
+  max_backups: 3       # 保留的旧日志文件最大数量
+  max_age: 28          # 保留旧日志文件的最大天数
+  compress: true       # 是否压缩旧日志文件

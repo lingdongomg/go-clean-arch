@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
+	log "github.com/lingdongomg/g-lib/logger"
 )
 
 // ErrorResponse 统一错误响应结构
@@ -59,25 +59,25 @@ func NewAppErrorWithErr(code int, message string, err error) *AppError {
 }
 
 // ErrorHandler 统一错误处理中间件（用于panic恢复）
-func ErrorHandler(logger *logrus.Logger) gin.HandlerFunc {
+func ErrorHandler() gin.HandlerFunc {
 	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
 		if err, ok := recovered.(error); ok {
-			handleError(c, err, logger)
+			handleError(c, err)
 		} else {
-			handleError(c, ErrInternalServerError, logger)
+			handleError(c, ErrInternalServerError)
 		}
 	})
 }
 
 // ErrorMiddleware 错误处理中间件（用于手动错误处理）
-func ErrorMiddleware(logger *logrus.Logger) gin.HandlerFunc {
+func ErrorMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
 
 		// 检查是否有错误
 		if len(c.Errors) > 0 {
 			err := c.Errors.Last().Err
-			handleError(c, err, logger)
+			handleError(c, err)
 			c.Abort()
 		}
 	}
@@ -88,25 +88,18 @@ func HandleError(c *gin.Context, err error) {
 	c.Error(err)
 }
 
-func handleError(c *gin.Context, err error, logger *logrus.Logger) {
-	// 记录错误日志
-	logFields := logrus.Fields{
-		"method":     c.Request.Method,
-		"uri":        c.Request.RequestURI,
-		"user_agent": c.Request.UserAgent(),
-		"ip":         c.ClientIP(),
-		"error":      err.Error(),
-	}
-
+func handleError(c *gin.Context, err error) {
 	// 检查是否是自定义应用错误
 	var appErr *AppError
 	if errors.As(err, &appErr) {
 		if appErr.Code >= 500 {
 			// 服务器错误，使用 ERROR 级别
-			logger.WithFields(logFields).Error("Server error")
+			log.Errorf("Server error - Method: %s, URI: %s, UserAgent: %s, IP: %s, Error: %v",
+				c.Request.Method, c.Request.RequestURI, c.Request.UserAgent(), c.ClientIP(), err)
 		} else {
 			// 客户端错误，使用 WARN 级别
-			logger.WithFields(logFields).Warn("Client error")
+			log.Warnf("Client error - Method: %s, URI: %s, UserAgent: %s, IP: %s, Error: %v",
+				c.Request.Method, c.Request.RequestURI, c.Request.UserAgent(), c.ClientIP(), err)
 		}
 		c.JSON(appErr.Code, ErrorResponse{
 			Code:    appErr.Code,
@@ -121,7 +114,8 @@ func handleError(c *gin.Context, err error, logger *logrus.Logger) {
 		code := http.StatusBadRequest
 		message := "请求参数错误"
 
-		logger.WithFields(logFields).Warn("Binding error")
+		log.Warnf("Binding error - Method: %s, URI: %s, UserAgent: %s, IP: %s, Error: %v",
+			c.Request.Method, c.Request.RequestURI, c.Request.UserAgent(), c.ClientIP(), err)
 
 		c.JSON(code, ErrorResponse{
 			Code:    code,
@@ -132,7 +126,8 @@ func handleError(c *gin.Context, err error, logger *logrus.Logger) {
 	}
 
 	// 未知错误，返回 500
-	logger.WithFields(logFields).Error("Unknown error")
+	log.Errorf("Unknown error - Method: %s, URI: %s, UserAgent: %s, IP: %s, Error: %v",
+		c.Request.Method, c.Request.RequestURI, c.Request.UserAgent(), c.ClientIP(), err)
 	c.JSON(http.StatusInternalServerError, ErrorResponse{
 		Code:    http.StatusInternalServerError,
 		Message: "服务器内部错误",

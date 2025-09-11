@@ -5,10 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/sirupsen/logrus"
-
 	"github.com/bxcodec/go-clean-arch/domain"
 	"github.com/bxcodec/go-clean-arch/internal/repository"
+	log "github.com/lingdongomg/g-lib/logger"
 )
 
 type ArticleRepository struct {
@@ -23,14 +22,14 @@ func NewArticleRepository(conn *sql.DB) *ArticleRepository {
 func (m *ArticleRepository) fetch(ctx context.Context, query string, args ...interface{}) (result []domain.Article, err error) {
 	rows, err := m.Conn.QueryContext(ctx, query, args...)
 	if err != nil {
-		logrus.Error(err)
+		log.Error("Failed to execute query:", err)
 		return nil, err
 	}
 
 	defer func() {
 		errRow := rows.Close()
 		if errRow != nil {
-			logrus.Error(errRow)
+			log.Error("Failed to close rows:", errRow)
 		}
 	}()
 
@@ -48,7 +47,7 @@ func (m *ArticleRepository) fetch(ctx context.Context, query string, args ...int
 		)
 
 		if err != nil {
-			logrus.Error(err)
+			log.Error("Failed to scan row:", err)
 			return nil, err
 		}
 		t.Author = domain.Author{
